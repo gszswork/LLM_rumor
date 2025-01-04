@@ -19,10 +19,22 @@ This prompt is delivered to the ChatGPT for a prediction on the veracity of the 
 To run the chain of propagation detection, simply: 
 
 `
-python chain_of_prop.py
+python chain_of_prop.py --dataset 'Twitter'
 `
 
-The results are stored locally, which can be used for evaluation. 
+`
+python chain_of_prop.py --dataset 'Weibo'
+`
+
+The results are stored locally. To evaluate, run: 
+
+`
+python chain_of_prop_eval.py --dataset 'Twitter'
+`
+
+`
+python chain_of_prop_eval.py --dataset 'Weibo'
+`
 
 
 ## Reference
