@@ -1,5 +1,5 @@
 # LLM_rumor
-Rumor detection with LLM prompt engineering
+LLM, prompt, rumour detection, misinformation, fake news detection
 
 ## 1. Chain of propagation 
 
