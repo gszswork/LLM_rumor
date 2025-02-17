@@ -4,7 +4,7 @@ import torch
 from datasets import Dataset, DatasetDict
 from random import shuffle
 
-def load_data(datasetname, path):
+def load_dataset(datasetname, path):
     if datasetname == 'mc-fake':
         train_dict, valid_dict, test_dict = load_mc_fake(datasetname, path)
     else: 
@@ -13,7 +13,7 @@ def load_data(datasetname, path):
     #print(train_dict['label'])
     hf_dataset = DatasetDict({
         'train': Dataset.from_dict(train_dict),
-        'valid': Dataset.from_dict(valid_dict),
+        'validation': Dataset.from_dict(valid_dict),
         'test': Dataset.from_dict(test_dict)
     })
     
@@ -45,19 +45,22 @@ def load_mc_fake(datasetname, path):
 
     # 7:1:2 split
     train_data = {'text': [data_json[str(i)]['title'] + ' (Date: '+ data_json[str(i)]['date'] +') '+ data_json[str(i)]['text'] for i in train_ids],
-                  'label': [data_json[str(i)]['label'] for i in train_ids]}
+                  'labels': [data_json[str(i)]['label'] for i in train_ids]}
 
     valid_data = {'text': [data_json[str(i)]['title'] + ' (Date: '+ data_json[str(i)]['date'] +') '+ data_json[str(i)]['text'] for i in valid_ids],
-                  'label': [data_json[str(i)]['label'] for i in valid_ids]}
+                  'labels': [data_json[str(i)]['label'] for i in valid_ids]}
 
     test_data = {'text': [data_json[str(i)]['title'] + ' (Date: '+ data_json[str(i)]['date'] +') '+ data_json[str(i)]['text'] for i in test_ids],
-                 'label': [data_json[str(i)]['label'] for i in test_ids]}
+                 'labels': [data_json[str(i)]['label'] for i in test_ids]}
     
     return train_data, valid_data, test_data
 
 
-# if __name__ == '__main__':
-#     mc_fake_dataset = load_data("mc-fake", "./data")
-#     mc_fake_train = mc_fake_dataset['train']
-#     print(mc_fake_train[0])
-    
+if __name__ == '__main__':
+    mc_fake_dataset = load_dataset("mc-fake", "./data")
+    mc_fake_train = mc_fake_dataset['train']
+    print(mc_fake_train[0])
+    mc_fake_valid = mc_fake_dataset['validation']
+    print(mc_fake_valid[0])
+    mc_fake_test = mc_fake_dataset['test']
+    print(mc_fake_test[0])

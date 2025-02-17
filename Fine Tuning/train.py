@@ -1,45 +1,48 @@
-from transformers import AutoTokenizer
-from dataset import load_dataset
-import argparse
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from torch import nn
+import os
+import argparse
+import loralib as lora
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from dataset import load_dataset
+import os
 from peft import LoraConfig, get_peft_model, TaskType
-from model import LlamaForClassification
-from transformers import TrainingArguments, Trainer
+
+
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Argument parser example")
-    
-    parser.add_argument("--dataset", type=str, default="mc-fake", help="Dataset name")
-    # Add arguments
-    # parser.add_argument("--input", type=str, required=True, help="Path to input file")
-    # parser.add_argument("--output", type=str, default="output.txt", help="Path to output file")
-    # parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
-    # parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for optimization")
-    # parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser = argparse.ArgumentParser(description='Fine-tune a language model for classification using LoRA')
+    parser.add_argument('--base_model', type=str, default="crumb/nano-mistral", help='Base model to fine-tune (default: crumb/nano-mistral)')
+    parser.add_argument('--dataset_name', type=str, default="mc-fake", help='Name of the dataset to use (default: mc-fake)')
+    parser.add_argument('--cache_dir', type=str, default="./model_cache", help='Directory to cache the downloaded models (default: ./model_cache)')
     return parser.parse_args()
 args = parse_args()
 
-MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+dataset = load_dataset(args.dataset_name, "./data")
 
-dataset = load_dataset(args.dataset)
-def tokenize_function(example):
-    return tokenizer(example["text"], truncation=True, padding="max_length", max_length=128)
+# Load model and tokenizer for sequence classification
+tokenizer = AutoTokenizer.from_pretrained(args.base_model, cache_dir=args.cache_dir)
+model = AutoModelForSequenceClassification.from_pretrained(args.base_model,num_labels=2,cache_dir=args.cache_dir)
 
-# Tokenize dataset
-tokenized_datasets = dataset.map(tokenize_function, batched=True)
+# Set padding token
+tokenizer.pad_token = tokenizer.eos_token
+model.config.pad_token_id = tokenizer.eos_token_id
+def tokenize_function(examples):
+    return tokenizer(
+        examples["text"],
+        padding=True,
+        truncation=True,
+        max_length=512,
+        return_tensors=None
+    )
+print(dataset["train"].column_names)
+# Process dataset
+tokenized_dataset = dataset.map(
+    tokenize_function,
+    batched=True,
+    remove_columns=['text'],
+)
+tokenized_dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
 
-# Convert labels into tensors
-tokenized_datasets = tokenized_datasets.rename_column("label", "labels")
-tokenized_datasets.set_format("torch")
-
-# Load model
-num_labels = 2  # MC-Fake News has 2 categories
-model = LlamaForClassification(MODEL_NAME, num_labels).to("cuda")
-
-# Apply LoRA
 lora_config = LoraConfig(
     r=16,  # LoRA rank
     lora_alpha=32,  
@@ -51,7 +54,7 @@ lora_config = LoraConfig(
 model = get_peft_model(model, lora_config)
 model.print_trainable_parameters()
 
-
+from transformers import TrainingArguments, Trainer
 
 training_args = TrainingArguments(
     output_dir="./lora_finetuned_llama_cls",
@@ -69,22 +72,12 @@ training_args = TrainingArguments(
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=tokenized_datasets["train"],
-    eval_dataset=tokenized_datasets["test"],
+    train_dataset=tokenized_dataset["train"],
+    eval_dataset=tokenized_dataset["test"],
 )
 
 trainer.train()
 
-
-# TODO: Load the trained model and apply to the test set. 
-def predict(text):
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding="max_length", max_length=128)
-    inputs = {k: v.to("cuda") for k, v in inputs.items()}
-
-    with torch.no_grad():
-        outputs = model(**inputs)
-        logits = outputs["logits"]
-        prediction = torch.argmax(logits, dim=-1).item()
-
-    return prediction
-
+checkpoint_path = './checkpoints/lora_params'+args.base_model+'.pt'
+os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+torch.save(lora.lora_state_dict(model), checkpoint_path)
