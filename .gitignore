@@ -1,1 +1,12 @@
 Fine Tuning/data/mc-fake.json
+*/.DS_Store
+
+.DS_Store
+.DS_Store
+/FineTuning/model_cache
+/FineTuning/wandb
+/FineTuning/logs
+/FineTuning/lora_finetuned_llama_cls
+/FineTuning/data
+/FineTuning/checkpoints
+/FineTuning/__pycache__

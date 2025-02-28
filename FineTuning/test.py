@@ -2,12 +2,10 @@ import torch
 import os
 import argparse
 import loralib as lora
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments, Trainer
 from dataset import load_dataset
 import os
 from peft import LoraConfig, get_peft_model, TaskType
-
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Fine-tune a language model for classification using LoRA')
@@ -54,10 +52,16 @@ lora_config = LoraConfig(
 model = get_peft_model(model, lora_config)
 model.print_trainable_parameters()
 
-from transformers import TrainingArguments, Trainer
+checkpoint_path = './checkpoints/lora_params' + args.base_model + '.pt'
+
+if os.path.exists(checkpoint_path):
+    model.load_state_dict(torch.load(checkpoint_path), strict=False)
+    print("LoRA parameters loaded successfully.")
+else:
+    print("Checkpoint not found! Make sure training was completed successfully.")
 
 training_args = TrainingArguments(
-    output_dir="./lora_finetuned_llama_cls",
+    output_dir="./lora_finetuned_"+args.base_model,
     evaluation_strategy="epoch",
     save_strategy="epoch",
     per_device_train_batch_size=4,  
@@ -72,12 +76,8 @@ training_args = TrainingArguments(
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=tokenized_dataset["train"],
     eval_dataset=tokenized_dataset["test"],
 )
 
-trainer.train()
-
-checkpoint_path = './checkpoints/lora_params'+args.base_model+'.pt'
-os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-torch.save(lora.lora_state_dict(model), checkpoint_path)
+metrics = trainer.evaluate()
+print(metrics)
