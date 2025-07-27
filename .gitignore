@@ -10,3 +10,9 @@ Fine Tuning/data/mc-fake.json
 /FineTuning/data
 /FineTuning/checkpoints
 /FineTuning/__pycache__
+/Prompt Engineering/gpt_3.5_turbo_liar_new_rets
+/Prompt Engineering/gpt_o3_mini_liar_new_rets
+/Prompt Engineering/__pycache__
+/Prompt Engineering/data/LIAR-New
+Prompt Engineering/data/mc-fake_test.json
+/Prompt Engineering/data
