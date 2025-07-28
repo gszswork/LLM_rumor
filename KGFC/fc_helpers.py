@@ -1,45 +1,105 @@
 import os, csv, json
 import re
 import time
+import hashlib
+import pickle
+from pathlib import Path
 from openai import OpenAI
+import google.generativeai as genai
+import dotenv
 
-def run_llm(prompt, temperature=0.0, max_tokens=256, api_key="", engine="gpt-3.5-turbo"):
-    """
-    Real LLM function using OpenAI API v1.x
-    Adapted from ToG/utils.py run_llm implementation with modern OpenAI client
-    """
-    # Handle different engine configurations
-    if "llama" not in engine.lower():
-        # For local llama server
+# Load environment variables from a .env file if present
+dotenv.load_dotenv()
+
+# Cache configuration
+CACHE_DIR = Path("llm_cache")
+CACHE_ENABLED = os.getenv("LLM_CACHE_ENABLED", "true").lower() == "true"
+
+def ensure_cache_dir():
+    """Ensure cache directory exists"""
+    if CACHE_ENABLED:
+        CACHE_DIR.mkdir(exist_ok=True)
+
+def generate_cache_key(prompt, temperature, max_tokens, engine):
+    """Generate unique cache key for LLM call parameters"""
+    cache_data = f"{prompt}|{temperature}|{max_tokens}|{engine}"
+    return hashlib.sha256(cache_data.encode()).hexdigest()
+
+def get_cached_response(cache_key):
+    """Get cached response if exists"""
+    if not CACHE_ENABLED:
+        return None
+    
+    cache_file = CACHE_DIR / f"{cache_key}.pkl"
+    if cache_file.exists():
         try:
-            client = OpenAI(
-                api_key="EMPTY",
-                base_url="http://localhost:8000/v1"  # your local llama server port
-            )
-            # Try to get available models
-            models = client.models.list()
-            if models.data:
-                engine = models.data[0].id
-            else:
-                engine = "llama"
+            with open(cache_file, 'rb') as f:
+                return pickle.load(f)
         except Exception as e:
-            print(f"Local server connection failed: {e}, falling back to mock")
-            return run_llm_mock(prompt, temperature, max_tokens, api_key, engine)
-    else:
-        # For OpenAI API
-        api_key = api_key if api_key else os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            print("No OpenAI API key found, falling back to mock")
-            return run_llm_mock(prompt, temperature, max_tokens, api_key, engine)
-        
-        client = OpenAI(api_key=api_key)
+            print(f"Cache read error: {e}")
+    return None
 
+def save_to_cache(cache_key, response):
+    """Save response to cache"""
+    if not CACHE_ENABLED:
+        return
+    
+    ensure_cache_dir()
+    cache_file = CACHE_DIR / f"{cache_key}.pkl"
+    try:
+        with open(cache_file, 'wb') as f:
+            pickle.dump(response, f)
+    except Exception as e:
+        print(f"Cache write error: {e}")
+
+def run_llm(prompt, temperature=0.0, max_tokens=256, api_key="", engine="gemini-2.0-flash"):
+    """
+    Real LLM function supporting OpenAI GPT and Google Gemini models with caching
+    """
+    # Generate cache key
+    cache_key = generate_cache_key(prompt, temperature, max_tokens, engine)
+    
+    # Check cache first
+    cached_response = get_cached_response(cache_key)
+    if cached_response is not None:
+        print(f"Cache hit for {engine}")
+        return cached_response
+    
+    # Cache miss - make actual API call
+    print(f"Cache miss for {engine}")
+    if engine.lower().startswith('gpt'):
+        # Use OpenAI API for GPT models
+        response = run_openai_llm(prompt, temperature, max_tokens, api_key, engine)
+    elif engine.lower().startswith('gemini'):
+        # Use Google Gemini API for Gemini models
+        response = run_gemini_llm(prompt, temperature, max_tokens, api_key, engine)
+    else:
+        print(f"Unsupported engine: {engine}, falling back to mock")
+        response = run_llm_mock(prompt, temperature, max_tokens, api_key, engine)
+    
+    # Save to cache
+    save_to_cache(cache_key, response)
+    return response
+
+
+def run_openai_llm(prompt, temperature, max_tokens, api_key, engine):
+    """
+    Run LLM using OpenAI API (called from cached run_llm function)
+    """
+    # Get API key
+    api_key = api_key if api_key else os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        print("No OpenAI API key found, falling back to mock")
+        return run_llm_mock(prompt, temperature, max_tokens, api_key, engine)
+    
+    client = OpenAI(api_key=api_key)
+    
     messages = [
         {"role": "system", "content": "You are an AI assistant that helps people find information."},
         {"role": "user", "content": prompt}
     ]
     
-    print("start openai")
+    print("start openai API call")
     max_retries = 3
     retry_count = 0
     
@@ -54,10 +114,57 @@ def run_llm(prompt, temperature=0.0, max_tokens=256, api_key="", engine="gpt-3.5
                 presence_penalty=0
             )
             result = response.choices[0].message.content
-            print("end openai")
+            print("end openai API call")
             return result
         except Exception as e:
             print(f"openai error (attempt {retry_count + 1}): {e}")
+            retry_count += 1
+            if retry_count < max_retries:
+                time.sleep(2)
+            else:
+                print("Max retries reached, falling back to mock")
+                return run_llm_mock(prompt, temperature, max_tokens, api_key, engine)
+
+
+def run_gemini_llm(prompt, temperature, max_tokens, api_key, engine):
+    """
+    Run LLM using Google Gemini API (called from cached run_llm function)
+    """
+    # Get API key
+    api_key = api_key if api_key else os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("No Google/Gemini API key found, falling back to mock")
+        return run_llm_mock(prompt, temperature, max_tokens, api_key, engine)
+    
+    # Configure Gemini
+    genai.configure(api_key=api_key)
+    
+    print("start gemini API call")
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            # Initialize the model
+            model = genai.GenerativeModel(engine)
+            
+            # Configure generation parameters
+            generation_config = genai.types.GenerationConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            )
+            
+            # Generate response
+            response = model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
+            
+            result = response.text
+            print("end gemini API call")
+            return result
+        except Exception as e:
+            print(f"gemini error (attempt {retry_count + 1}): {e}")
             retry_count += 1
             if retry_count < max_retries:
                 time.sleep(2)

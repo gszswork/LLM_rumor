@@ -1,4 +1,5 @@
 import json
+import time
 from fc_helpers import *
 
 # TODO: run_llm, reasoning, fallbackcall functions. 
@@ -122,15 +123,21 @@ def fc_reason_double_kg(claim, doc_kg, claim_kg):
 def main(datasetname):
     datas = load_datas(datasetname)
 
+    
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    print(timestamp)
+    output_filename = f'./{datasetname}_pred_results_{timestamp}.json'
     prediction_results = {}
+
     for idx, data in enumerate(datas):
         claim, claim_kg, doc_kg = data['claim_text'], data['claim_kg'], data['doc_kg']
         claim_topics = [tup[0] for tup in claim_kg] + [tup[2] for tup in claim_kg]
         pred = fc_reason(claim, doc_kg, claim_topics)
-        prediction_results[idx] = pred
-
-    with open('./' + datasetname + '_pred_results.json', 'w', encoding='utf-8') as f:
-        json.dump(prediction_results, f)
+        prediction_results[idx] = {'pred': pred, 'claim': claim}  # <-- Uncommented
+        print(pred)
+        # Write results after every prediction
+        with open(output_filename, 'w', encoding='utf-8') as f:
+            json.dump(prediction_results, f, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":
