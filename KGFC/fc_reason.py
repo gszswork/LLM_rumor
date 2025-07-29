@@ -1,5 +1,6 @@
 import json
 import time
+import os
 from fc_helpers import *
 
 # TODO: run_llm, reasoning, fallbackcall functions. 
@@ -19,6 +20,8 @@ def fc_reason(claim, doc_kg, claim_topics):
         str: Fact-checking result ("SUPPORTS", "REFUTES", or "NOT ENOUGH INFO")
     """
     
+    # Cache session is managed by start_sample_logging in main function
+    
     # Build knowledge graph index from RDF triples
     kg_index = build_kg_index(doc_kg)
     
@@ -33,7 +36,7 @@ def fc_reason(claim, doc_kg, claim_topics):
     pre_relations = []
     pre_heads = [-1] * len(topic_entity)
     max_depth = 3
-    width = 3
+    width = 10
     
     for depth in range(1, max_depth + 1):
         current_entity_relations_list = []
@@ -126,15 +129,38 @@ def main(datasetname):
     
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     print(timestamp)
-    output_filename = f'./{datasetname}_pred_results_{timestamp}.json'
+    output_filename = f'./{datasetname}_pred_results.json'
+    log_filename = f'./{datasetname}_llm_logs_{timestamp}.json'
+    
+    # Load existing results if file exists
     prediction_results = {}
+    if os.path.exists(output_filename):
+        try:
+            with open(output_filename, 'r', encoding='utf-8') as f:
+                prediction_results = json.load(f)
+                print(f"Loaded existing results with {len(prediction_results)} entries")
+        except (json.JSONDecodeError, IOError):
+            print("Could not load existing results, starting fresh")
+            prediction_results = {}
 
     for idx, data in enumerate(datas):
+        # Check if current idx is already processed
+        if str(idx) in prediction_results:
+            print(f"Skipping idx {idx} - already processed")
+            continue
+        
+        # Start logging for this sample
+        start_sample_logging(idx)
+            
         claim, claim_kg, doc_kg = data['claim_text'], data['claim_kg'], data['doc_kg']
         claim_topics = [tup[0] for tup in claim_kg] + [tup[2] for tup in claim_kg]
         pred = fc_reason(claim, doc_kg, claim_topics)
-        prediction_results[idx] = {'pred': pred, 'claim': claim}  # <-- Uncommented
-        print(pred)
+        prediction_results[str(idx)] = {'pred': pred, 'claim': claim}
+        print(f"idx {idx}: {pred}")
+        
+        # Save LLM logs for this sample
+        save_sample_log(log_filename)
+        
         # Write results after every prediction
         with open(output_filename, 'w', encoding='utf-8') as f:
             json.dump(prediction_results, f, ensure_ascii=False, indent=2)

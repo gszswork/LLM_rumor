@@ -15,10 +15,56 @@ dotenv.load_dotenv()
 CACHE_DIR = Path("llm_cache")
 CACHE_ENABLED = os.getenv("LLM_CACHE_ENABLED", "true").lower() == "true"
 
+# Global logging for prompt/response pairs per data sample
+_current_sample_log = {}
+_current_sample_id = None
+
 def ensure_cache_dir():
     """Ensure cache directory exists"""
     if CACHE_ENABLED:
         CACHE_DIR.mkdir(exist_ok=True)
+
+def start_sample_logging(sample_id):
+    """Start logging for a new data sample"""
+    global _current_sample_log, _current_sample_id
+    _current_sample_id = sample_id
+    _current_sample_log = {}
+
+def log_llm_call(prompt, response, call_type="llm_call"):
+    """Log a prompt/response pair for the current sample"""
+    global _current_sample_log
+    if _current_sample_id is not None:
+        call_count = len(_current_sample_log)
+        _current_sample_log[str(call_count)] = {
+            "type": call_type,
+            "prompt": prompt,
+            "response": response,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+def get_sample_log():
+    """Get the current sample's log"""
+    return _current_sample_log.copy()
+
+def save_sample_log(log_file_path):
+    """Save the current sample log to file"""
+    global _current_sample_log, _current_sample_id
+    if _current_sample_id is not None and _current_sample_log:
+        # Load existing logs
+        all_logs = {}
+        if os.path.exists(log_file_path):
+            try:
+                with open(log_file_path, 'r', encoding='utf-8') as f:
+                    all_logs = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                all_logs = {}
+        
+        # Add current sample log
+        all_logs[str(_current_sample_id)] = _current_sample_log
+        
+        # Save updated logs
+        with open(log_file_path, 'w', encoding='utf-8') as f:
+            json.dump(all_logs, f, ensure_ascii=False, indent=2)
 
 def generate_cache_key(prompt, temperature, max_tokens, engine):
     """Generate unique cache key for LLM call parameters"""
@@ -76,6 +122,9 @@ def run_llm(prompt, temperature=0.0, max_tokens=256, api_key="", engine="gemini-
     else:
         print(f"Unsupported engine: {engine}, falling back to mock")
         response = run_llm_mock(prompt, temperature, max_tokens, api_key, engine)
+    
+    # Log the LLM call for current sample
+    log_llm_call(prompt, response, f"llm_call_{engine}")
     
     # Save to cache
     save_to_cache(cache_key, response)
