@@ -1,3 +1,9 @@
+"""
+ToG-style Knowledge Graph reasoning for fact-checking. 
+Note: 1. ToG has a fact-checking experiment on Creak dataset. Their code has no implementation on that fact-checking part. 
+      2. The past experiment has a mismatch between the KG and the raw_text claim, so leading to NOT ENOUGH EVIDENCE prediction. 
+"""
+
 import json
 import time
 import os
@@ -97,7 +103,7 @@ def fc_reason(claim, doc_kg, claim_topics):
         )
         
         cluster_chain_of_entities.append(chain_of_entities)
-        
+        print(cluster_chain_of_entities)
         if flag:
             # Reasoning step - check if current evidence is sufficient for fact-checking
             stop, result = reasoning(claim, cluster_chain_of_entities)
@@ -143,7 +149,8 @@ def main(datasetname):
             print("Could not load existing results, starting fresh")
             prediction_results = {}
 
-    for idx, data in enumerate(datas):
+    # for idx, data in enumerate(datas):   # Migrate the dataset from dict to pandas
+    for idx, (i, data) in enumerate(datas.iterrows()):
         # Check if current idx is already processed
         if str(idx) in prediction_results:
             print(f"Skipping idx {idx} - already processed")
@@ -169,3 +176,4 @@ def main(datasetname):
 if __name__ == "__main__":
     # construct_kg("AggreFact-CNN")
     main("AggreFact-CNN")
+    main("AggreFact-Xsum")

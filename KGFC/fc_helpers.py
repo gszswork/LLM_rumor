@@ -1,4 +1,5 @@
 import os, csv, json
+import pandas as pd
 import re
 import time
 import hashlib
@@ -188,7 +189,7 @@ def run_gemini_llm(prompt, temperature, max_tokens, api_key, engine):
     # Configure Gemini
     genai.configure(api_key=api_key)
     
-    print("start gemini API call")
+    # print("start gemini API call")
     max_retries = 3
     retry_count = 0
     
@@ -306,6 +307,35 @@ Claim: {}
 Knowledge Triplets: {}
 A: """
 
+
+# Double KG fact-checking prompts 
+double_kg_fact_check_prompt = """Given a claim's knowledge graph (KG) triplets and the associated retrieved evidence knowledge graph triplets (entity, relation, entity), you are asked to determine if the evidence is sufficient to fact-check the claim and provide a verdict (SUPPORTS, REFUTES, or NOT ENOUGH INFO) You are strongly encouraged to use as less NOT ENOUGH INFO as possible.
+
+Example 1:
+Claim Triplets: John, works_at, Google
+John, is, software_engineer
+Knowledge Triplets: John, works_at, Google
+Google, is, technology_company
+A: {{SUPPORTS}}. The evidence clearly supports the claim that John works at Google as a software engineer based on the provided knowledge triplets.
+
+Example 2:
+Claim Triplets: Mary, works_at, Google
+Knowledge Triplets: Mary, works_at, Microsoft
+Mary, is, employee
+Microsoft, is, technology_company
+A: {{REFUTES}}. The evidence contradicts the claim since the triplets show that Mary works at Microsoft, which refutes the claim that she works at Google. 
+
+Example 3:
+Claim Triplets: The new iPhone, costs, $1000
+Knowledge Triplets: iPhone, manufactured_by, Apple
+Apple, is, technology_company
+iPhone, is, smartphone
+A: {{NOT ENOUGH INFO}}. The evidence does not contain information about the iPhone's price, so it's insufficient to fact-check the claim about the cost.
+
+Claim Triplets: {}
+Knowledge Triplets: {}
+A: """
+
 fact_check_relation_extract_prompt = """Please retrieve {} relations (separated by semicolon) that are most relevant for fact-checking the given claim and rate their contribution on a scale from 0 to 1 (the sum of the scores of {} relations is 1).
 
 Example:
@@ -404,9 +434,10 @@ def construct_kg(datasetname):
 
 
 def load_datas(datasetname):
-    dataset_path = f"dataset/extracted_KG/{datasetname}/fc_{datasetname}.csv"
-    with open(dataset_path, 'r', encoding='utf-8') as f:
-        datas = json.load(f)
+    dataset_path = f"dataset/extracted_KG/{datasetname}/{datasetname}.pkl"
+    # with open(dataset_path, 'r', encoding='utf-8') as f:
+    #     datas = json.load(f)
+    datas = pd.read_pickle(dataset_path)
     
     # datas is a list of dict, each dict is a data item: 
     # With k-w pairs {'doc_kg', 'claim_kg', 'claim_text'}
